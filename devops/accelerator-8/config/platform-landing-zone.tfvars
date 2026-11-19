@@ -58,7 +58,7 @@ custom_replacements = {
     ddos_protection_plan_enabled = false
 
     # Resource provisioning primary connectivity
-    primary_virtual_network_gateway_express_route_enabled                = true
+    primary_virtual_network_gateway_express_route_enabled                = false
     primary_virtual_network_gateway_express_route_hobo_public_ip_enabled = true
     primary_virtual_network_gateway_vpn_enabled                          = true
     primary_private_dns_zones_enabled                                    = true
@@ -476,7 +476,8 @@ hub_virtual_networks = {
       name                  = "$${primary_bastion_host_name}"
       zones                 = []
       bastion_public_ip = {
-        name = "$${primary_bastion_host_public_ip_name}"
+        name  = "$${primary_bastion_host_public_ip_name}"
+        zones = []
       }
     }
   }
