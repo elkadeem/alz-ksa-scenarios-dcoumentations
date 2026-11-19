@@ -626,6 +626,8 @@ The DNS overrides are now present in both copies, but future edits are not synch
 
 **Chosen approach:** Keep bootstrap unchanged, then make the fix in the generated platform repository. For a single deployment, committing local copies of the two affected modules is simpler than maintaining two remote forks. The committed copies make the fix reproducible on clean pipeline agents; never patch files under `.terraform`.
 
+As an alternative for testing, [supply the same files during bootstrap](#optional-test-include-the-module-fix-during-bootstrap). That option uses the accelerator's additional-files parameter rather than a helper script or custom starter fork.
+
 This section is an implementation runbook, not confirmation that the generated repository has been patched or that a deployment plan has passed.
 
 Apply this temporary workaround manually after bootstrap. The [end-of-guide checklist](#additional-steps-after-bootstrap) summarizes the required edits and validation. When the expected upstream fix becomes available, verify it before removing this customization.
@@ -1069,3 +1071,89 @@ Apply this **temporary manual workaround** in the generated platform repository 
 10. Once an upstream fix is released, verify that the hub-and-spoke release actually consumes the corrected DNS/regions dependency. Restore the registry module source with that tested version, initialize and review a new plan, then remove the unused local copies in the same reviewed change. Do not assume upgrading the starter or DNS module alone fixes the nested dependency.
 
 The expanded [manual runbook](#post-bootstrap-saudi-dns-module-fix) explains the module wiring and safeguards. Never edit `.terraform` as the permanent fix or commit bootstrap output, state, plans, credentials, or caches.
+
+### Optional test: include the module fix during bootstrap
+
+**Status:** Optional test procedure, not a verified bootstrap or deployment result. The installed ALZ PowerShell module `7.1.5` copies each `-starterAdditionalFiles` folder into the starter root under that folder's name and copies individual files by filename, overwriting matching files. This happens before the bootstrap Terraform invocation. This allows the same module workaround to be supplied during generation; it does not fix Saudi metadata upstream.
+
+Use this option **instead of** manually adding the workaround to the generated repository afterward. It is not necessary to delete repositories, recreate resources, or discard state. For an existing bootstrap, preserve the original configuration, output, and protected state, and review the bootstrap plan before accepting any changes.
+
+#### 1. Prepare the additional files manually
+
+In File Explorer, open the configuration folder selected for your bootstrap. For the existing local test, use:
+
+```text
+D:\workarea\Source\alz\terraform\devops\accelerator-8\.local-tests\accelerator-8\config
+```
+
+1. Keep the existing `inputs.yaml`, `platform-landing-zone.tfvars`, and `lib` folder unchanged.
+2. Create a folder named `modules` inside `config`.
+3. Right-click the prepared [saudi-dns-modules.zip](saudi-dns-modules.zip), select **Extract All**, and extract outside the configuration folder. Copy the extracted `hub-and-spoke-vnet` and `private-link-private-dns-zones` folders into `config\modules`. Do not copy the ZIP itself or an extra enclosing folder. These copies already contain the nested source change and Saudi lookup fix.
+4. From your generated platform checkout, copy **only** `main.connectivity.hub.and.spoke.virtual.network.tf` into `config`. For the checkout discussed here, the source file is `D:\workarea\Source\alz\alz-mgmt\main.connectivity.hub.and.spoke.virtual.network.tf`. Do not copy the entire generated repository or its variables/state into `config`.
+5. If you do not yet have a generated checkout, open the [original starter v17.7.0 networking file](https://github.com/Azure/alz-terraform-accelerator/blob/v17.7.0/templates/platform_landing_zone/main.connectivity.hub.and.spoke.virtual.network.tf), select **Download raw file**, and save it into `config` with that exact filename. Ensure the saved file ends in `.tf`, not `.tf.txt`.
+6. Open the copied networking file in VS Code. In the existing `module "hub_and_spoke_vnet"` block, set:
+
+   ```hcl
+   source = "./modules/hub-and-spoke-vnet"
+   ```
+
+   Remove its `version = "0.17.2"` line if present. Keep the module name, `count`, arguments, and provider mappings unchanged. Do not copy only this one-line snippet into an otherwise empty file: the complete module block is required.
+
+The prepared folder should contain:
+
+```text
+config\
+  inputs.yaml
+  platform-landing-zone.tfvars
+  main.connectivity.hub.and.spoke.virtual.network.tf
+  lib\
+    ... existing custom ALZ library files ...
+  modules\
+    hub-and-spoke-vnet\
+      main.tf
+      ... other Terraform files and LICENSE ...
+      modules\
+        hub-virtual-network-mesh\
+        virtual-network-gateway\
+    private-link-private-dns-zones\
+      locals.tf
+      ... other Terraform files and LICENSE ...
+```
+
+The new `config\modules` contains only the two supplied module folders. The generated starter already provides `modules\config-templating`; do not remove or replace that folder. Keep the source tags and Terraform versions aligned with the prepared ZIP.
+
+#### 2. Run the existing bootstrap command with the extra inputs
+
+From the same authenticated administrative PowerShell terminal normally used for bootstrap, use the following command for the local test. This is the normal accelerator invocation with two additional paths, not a separate patch script:
+
+```powershell
+$targetFolderPath = "D:\workarea\Source\alz\terraform\devops\accelerator-8\.local-tests\accelerator-8"
+
+Deploy-Accelerator `
+    -inputs "$targetFolderPath\config\inputs.yaml", "$targetFolderPath\config\platform-landing-zone.tfvars" `
+    -starterAdditionalFiles "$targetFolderPath\config\lib", `
+                            "$targetFolderPath\config\modules", `
+                            "$targetFolderPath\config\main.connectivity.hub.and.spoke.virtual.network.tf" `
+    -output "$targetFolderPath\output"
+```
+
+For a different scenario folder, change `$targetFolderPath` and prepare the files in that folder's `config` first. Retain the existing `lib` entry; supplying only the module overrides would omit your custom library input. A missing input path or mismatched module version must be corrected before continuing.
+
+Review the bootstrap plan. Do not accept unexpected resource destruction, repository changes, or permission changes. The additional files overwrite matching generated starter content; this is intentional only for the networking file and the two module copies.
+
+#### 3. Verify what the pipeline will actually use
+
+Before approving any platform apply, inspect the **generated Azure DevOps platform repository and the exact branch/commit selected by the pipeline**, not just the local starter output:
+
+- The root networking file must use `source = "./modules/hub-and-spoke-vnet"` with no `version` argument.
+- Both module folders, their nested Terraform files, and their licenses must be present in that commit.
+- The copied hub module's `private_dns_zones` block must use `source = "../private-link-private-dns-zones"` with no `version` argument.
+- The copied DNS `locals.tf` must explicitly return `"sae"` for `saudiarabiaeast`.
+- The existing `modules\config-templating` and custom `lib` files must still be present.
+- The generated variables must retain the Saudi starter and policy maps and lowercase SQL policy-effect overrides.
+
+For an already-created repository, do not assume rerunning bootstrap publishes or selects the desired commit: verify the remote files and pipeline checkout. If they were not updated, stop and deliver the prepared module folders and networking file through that repository's normal reviewed change process. Do not delete the repository to force regeneration.
+
+Run CI and a new delivery plan, ensuring `terraform init` runs after the source changes. Review the plan using the same acceptance checks as the manual workaround: no null region-code or SQL override errors, matching Backup DNS and policy names, preserved auto-registration/VNet links, and no unexpected replacements or deletions. A successful bootstrap alone does not demonstrate that the DNS fix works.
+
+After a verified upstream fix is available, remove these additional module/file inputs as part of switching back to the tested registry sources, and review the generated changes and platform plan again.
