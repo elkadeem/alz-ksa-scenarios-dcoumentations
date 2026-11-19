@@ -616,7 +616,7 @@ Do not set `private_dns_zone_region` to `sae`: the policy indexes the region map
 
 `dnzZoneRegionShortNames` is the exact object parameter name in ALZ library `platform/alz/2026.11.0`. This value replaces the entire default region map; extend it before selecting another private DNS region. The assignment is inherited through `corp_custom` from `corp` and is not removed by the local override. If the Corp management-group ID is renamed in the custom architecture, update the `corp` modification key too. Existing Defender assignment modifications are preserved.
 
-The `sae` value follows the supplied Saudi mapping; the public region-code document checked earlier did not independently verify it. Review the service's private-link metadata before production use.
+The `sae` value is the confirmed Azure Backup DNS code for Saudi Arabia East (`privatelink.sae.backup.windowsazure.com`). The public region-code document does not list it, so it was confirmed against the service rather than that document.
 
 **Separate deployment blocker:** These overrides do not populate the internal `geo_code` used by private DNS module `0.23.2`. Its regions dependency `0.12.0` has no Saudi entry, and its unconditional `replace` call rejects a null region code, even for zone names without `{regionCode}`. Apply the [post-bootstrap fix](#post-bootstrap-saudi-dns-module-fix) before deploying the private-link zones; changing only the policy map, starter short name, or Backup zone name does not resolve that Terraform error. The auto-registration zone remains `saudiarabiaeast.azure.local`.
 
@@ -631,12 +631,49 @@ This section is an implementation runbook, not confirmation that the generated r
 Apply this temporary workaround manually after bootstrap. The [end-of-guide checklist](#additional-steps-after-bootstrap) summarizes the required edits and validation. When the expected upstream fix becomes available, verify it before removing this customization.
 
 1. Complete [bootstrap](#8-deploy-the-bootstrap). If it has already completed, do not rerun it just for this error. Keep platform apply blocked while preparing the fix. If a delivery pipeline starts automatically, do not approve its apply stage.
-2. Clone/open the **generated platform repository** and create a normal change branch. Locate the Terraform root containing `main.connectivity.hub.and.spoke.virtual.network.tf` and `platform-landing-zone.auto.tfvars`. All module paths below are relative to that root, not this source scenario folder or the pipeline-template repository.
-3. Confirm the generated module versions match this runbook: starter `v17.7.0`, hub-and-spoke `0.17.2`, private DNS `0.23.2`. For those versions, download the source archives from:
-   - [Hub-and-spoke v0.17.2](https://github.com/Azure/terraform-azurerm-avm-ptn-alz-connectivity-hub-and-spoke-vnet/tree/v0.17.2)
-   - [Private DNS v0.23.2](https://github.com/Azure/terraform-azurerm-avm-ptn-network-private-link-private-dns-zones/tree/v0.23.2)
+2. Open your own clone of the **generated platform repository** and create a normal change branch using your preferred Git client. Locate the Terraform root containing `main.connectivity.hub.and.spoke.virtual.network.tf` and `platform-landing-zone.auto.tfvars`. For the local checkout discussed here, that root is `D:\workarea\Source\alz\alz-mgmt`. All paths below are relative to that root, not this source scenario folder or the pipeline-template repository.
+3. Confirm the generated module versions match this runbook: starter `v17.7.0`, hub-and-spoke `0.17.2`, private DNS `0.23.2`. If they differ, inspect the new dependency chain before applying this version-specific fix. Choose one of these manual preparation methods:
 
-   Extract the complete module contents into `modules/hub-and-spoke-vnet` and `modules/private-link-private-dns-zones`, respectively. Keep their nested modules, assets, and license/notice files; do not copy Terraform state, credentials, downloaded provider caches, or nested Git repositories. Record the upstream tag and resolved commit SHA for each copy in the change description. If the generated versions differ, inspect that dependency chain before applying this version-specific fix.
+   **Recommended: use the prepared module ZIP**
+
+   [saudi-dns-modules.zip](saudi-dns-modules.zip) contains the two customized module folders copied unchanged from `D:\workarea\Source\alz\alz-mgmt\modules` on 19 November 2026. All 48 archived files were checked byte-for-byte against that checkout. This verifies the package contents, not a successful Azure deployment.
+
+   - In your clone of this documentation repository, open `devops\accelerator-8` in File Explorer and locate `saudi-dns-modules.zip`. If viewing this guide on GitHub, open the ZIP link and select **Download raw file**.
+   - Right-click the ZIP, select **Extract All**, and choose a temporary location outside the generated platform repository.
+   - Open the extracted folder. You should see `hub-and-spoke-vnet` and `private-link-private-dns-zones` directly inside it.
+   - Copy those **two folders** into the generated platform repository's existing `modules` folder. For the checkout discussed here, that is `D:\workarea\Source\alz\alz-mgmt\modules`. Preserve its existing `config-templating` folder. If either destination module folder already exists, compare it first rather than blindly overwriting another customization.
+   - The ZIP includes Terraform files, required nested module files, and both licenses. It excludes configuration variables, credentials, state, plans, Git metadata, and provider caches.
+   - The nested DNS source change in step 5 and the Saudi lookup change in step 6 are **already included**. Verify those edits rather than applying them again. You must still perform the root source change in step 4, which is deliberately not included in this module-only archive.
+
+   **Alternative: prepare the same files from upstream ZIPs**
+
+   **Download the two ZIP files**
+
+   - Open the [hub-and-spoke v0.17.2 page](https://github.com/Azure/terraform-azurerm-avm-ptn-alz-connectivity-hub-and-spoke-vnet/tree/v0.17.2). Confirm the selected tag is `v0.17.2`, click **Code > Download ZIP**, and save it outside your platform repository. Alternatively, use the [v0.17.2 ZIP download](https://github.com/Azure/terraform-azurerm-avm-ptn-alz-connectivity-hub-and-spoke-vnet/archive/refs/tags/v0.17.2.zip).
+   - Repeat for the [private DNS v0.23.2 page](https://github.com/Azure/terraform-azurerm-avm-ptn-network-private-link-private-dns-zones/tree/v0.23.2), selecting tag `v0.23.2`, or use the [v0.23.2 ZIP download](https://github.com/Azure/terraform-azurerm-avm-ptn-network-private-link-private-dns-zones/archive/refs/tags/v0.23.2.zip).
+   - In Windows File Explorer, right-click each ZIP and select **Extract All**. Open the extracted folder until you can see `main.tf`, `locals.tf`, and `LICENSE`. Do not copy the enclosing archive-name folder into the repository.
+
+   **Copy only the required module files**
+
+   In your generated repository's existing `modules` folder, create the two folders below. Do not replace the existing `modules` folder or remove its `config-templating` subfolder.
+
+   | Extracted package | Destination relative to the generated Terraform root | Files to copy |
+   | --- | --- | --- |
+   | Hub-and-spoke `v0.17.2` | `modules\hub-and-spoke-vnet` | All root-level files ending in `.tf`, plus `LICENSE`. |
+   | Same hub-and-spoke package, `modules\hub-virtual-network-mesh` | `modules\hub-and-spoke-vnet\modules\hub-virtual-network-mesh` | All `.tf` files from this subfolder, preserving their names. |
+   | Same hub-and-spoke package, `modules\virtual-network-gateway` | `modules\hub-and-spoke-vnet\modules\virtual-network-gateway` | All `.tf` files from this subfolder, preserving their names. |
+   | Private DNS `v0.23.2` | `modules\private-link-private-dns-zones` | All root-level `.tf` files, plus `LICENSE`. No nested module Terraform files are required for this version. |
+
+   Copying only the three files that will be edited is **not enough**: the other Terraform files define the modules' variables, outputs, resources, and provider requirements. Include `main.telemetry.tf`, `terraform.tf`, moved blocks, and every other `.tf` file in the locations listed above. Files such as `avm.tflint.override.hcl` do not end in `.tf` and are not needed. Do not copy `.git`, `.github`, `.terraform`, examples, tests, or downloaded state/plan files.
+
+   Check these example paths in File Explorer before continuing:
+
+   - `D:\workarea\Source\alz\alz-mgmt\modules\hub-and-spoke-vnet\main.tf`
+   - `D:\workarea\Source\alz\alz-mgmt\modules\hub-and-spoke-vnet\modules\hub-virtual-network-mesh\main.tf`
+   - `D:\workarea\Source\alz\alz-mgmt\modules\hub-and-spoke-vnet\modules\virtual-network-gateway\main.tf`
+   - `D:\workarea\Source\alz\alz-mgmt\modules\private-link-private-dns-zones\locals.tf`
+
+   There must not be another archive-name folder between these directory names and their `.tf` files. Record the two source tags in the change description.
 
 4. In the generated root's `main.connectivity.hub.and.spoke.virtual.network.tf`, change only the `source` of the existing `module "hub_and_spoke_vnet"` to:
 
@@ -646,7 +683,7 @@ Apply this temporary workaround manually after bootstrap. The [end-of-guide chec
 
    Remove that module call's `version = "0.17.2"` argument: local module sources do not accept `version`. Preserve the module name, `count`, arguments, and provider mappings.
 
-5. In `modules/hub-and-spoke-vnet/main.tf`, change only the `source` of the existing `module "private_dns_zones"` to:
+5. In `modules/hub-and-spoke-vnet/main.tf`, change only the `source` of the existing `module "private_dns_zones"` to the following, or verify it if using the prepared ZIP:
 
    ```hcl
    source = "../private-link-private-dns-zones"
@@ -654,7 +691,7 @@ Apply this temporary workaround manually after bootstrap. The [end-of-guide chec
 
    Remove that call's `version = "0.23.2"` argument. Preserve its name, `for_each`, and arguments. These HCL source addresses use Terraform's slash notation even on Windows.
 
-6. Confirm `sae` against the target service's Saudi Backup private-link DNS metadata before using the following change. In `modules/private-link-private-dns-zones/locals.tf`, replace only the first region-lookup `locals` block with:
+6. `sae` is the confirmed Azure Backup DNS code for Saudi Arabia East (`privatelink.sae.backup.windowsazure.com`), so no further confirmation is needed. In `modules/private-link-private-dns-zones/locals.tf`, replace only the first region-lookup `locals` block with the following, or verify the equivalent lookup already included in the prepared ZIP:
 
    ```hcl
    locals {
@@ -681,6 +718,38 @@ Apply this temporary workaround manually after bootstrap. The [end-of-guide chec
     - No unexpected resource deletion, replacement, or address change is planned.
 
 Changing the two sources preserves addresses, but existing deployments still require plan review. Keep the generated-repository customization under version control: regeneration or a future bootstrap/template upgrade may overwrite its source references. Recheck it after upgrades. When a verified upstream release resolves Saudi metadata, switch back through a reviewed change and repeat the same plan checks before removing the local copies.
+
+#### Verify the fix and troubleshoot
+
+**Reference implementation:** the `alz-mgmt` repository, branch `add-arm-provider-enhanced-validation`, commit `18a2d16`, contains the finished change. A colleague can compare their generated repository against it or copy `modules/hub-and-spoke-vnet` and `modules/private-link-private-dns-zones` from it, then make only the root source edit in step 4 if it is not already present.
+
+Quick checks from the Terraform root before pushing:
+
+```powershell
+# 1. The three edits are present
+Select-String -Path main.connectivity.hub.and.spoke.virtual.network.tf -Pattern 'source\s*=\s*"\./modules/hub-and-spoke-vnet"'
+Select-String -Path modules\hub-and-spoke-vnet\main.tf -Pattern 'source\s*=\s*"\.\./private-link-private-dns-zones"'
+Select-String -Path modules\private-link-private-dns-zones\locals.tf -Pattern 'saudiarabiaeast'
+
+# 2. No stale registry source or version remains for either module
+Select-String -Path main.connectivity.hub.and.spoke.virtual.network.tf, modules\hub-and-spoke-vnet\main.tf -Pattern 'avm-ptn-alz-connectivity|avm-ptn-network-private-link|version\s*=\s*"0\.(17|23)'
+
+# 3. Format, re-initialize modules, validate
+terraform fmt -check -recursive modules main.connectivity.hub.and.spoke.virtual.network.tf
+terraform init -backend=false -input=false
+terraform validate
+```
+
+Check 1 must return all three lines and check 2 must return nothing for the changed module blocks. Local validation does not replace the delivery pipeline plan. In that plan, both the `replace` null error and the SQL override error must be gone; the Backup zone must be `privatelink.sae.backup.windowsazure.com`; and no DNS zone, VNet link, or auto-registration zone may be replaced or deleted.
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| `Invalid value for "replace" parameter: argument must not be null` still appears | The pipeline still downloads the registry modules, or the `locals.tf` edit is missing | Confirm checks 1 and 2 above, and that the changes are committed to the branch the pipeline runs |
+| `Module not installed` or `module source has changed` | Source changed without re-initialization | Run `terraform init`; the pipeline does this automatically |
+| `Unexpected attribute: "version"` on a module | A local module source still has `version` | Remove the `version` argument from that module call |
+| Plan wants to destroy and recreate DNS zones or links | Module block names or `for_each` keys were changed | Restore the original names and keys; do not approve apply |
+| `Invalid Attribute Value Match ... got: "Disabled"` | SQL `policyEffect` override uses a capital `D` | Use lowercase `disabled` for override values; keep `"Disabled"` for policy parameters |
+| Backup zone name is wrong for another region | The conditional was widened | Keep the `saudiarabiaeast` test; other regions must keep the upstream lookup |
 
 ### Disable Azure Private DNS Resolver
 
@@ -967,10 +1036,10 @@ Official guidance consulted on 19 November 2026; recheck it and regional availab
 Apply this **temporary manual workaround** in the generated platform repository after bootstrap. No helper, script, or pipeline cache patch is required. An upstream fix is expected next month, but its release/version is not verified here; remove the workaround only after testing a release that fixes the Saudi lookup.
 
 1. Complete bootstrap once. If it already completed, do not rerun it for the DNS error. Keep platform apply blocked.
-2. Clone/open the generated platform repository and create a change branch. Locate its Terraform root containing `main.connectivity.hub.and.spoke.virtual.network.tf`. Do not edit the bootstrap directory or downloaded starter cache.
-3. Confirm through the target service's private-link metadata that Saudi Backup uses `privatelink.sae.backup.windowsazure.com`.
-4. Download the complete [hub-and-spoke v0.17.2](https://github.com/Azure/terraform-azurerm-avm-ptn-alz-connectivity-hub-and-spoke-vnet/tree/v0.17.2) and [private DNS v0.23.2](https://github.com/Azure/terraform-azurerm-avm-ptn-network-private-link-private-dns-zones/tree/v0.23.2) source archives. Extract their contents under the generated Terraform root as `modules/hub-and-spoke-vnet` and `modules/private-link-private-dns-zones`. Keep nested modules, assets, and license/notice files. If your generated module versions differ, reassess this version-specific workaround first.
-5. Make these three edits by hand, preserving every other argument and module block name:
+2. In your own clone of the generated platform repository, open its Terraform root containing `main.connectivity.hub.and.spoke.virtual.network.tf` and create a change branch. For the checkout discussed here, use `D:\workarea\Source\alz\alz-mgmt`. Do not edit the bootstrap directory or downloaded starter cache.
+3. `sae` is confirmed as the Saudi Arabia East Azure Backup DNS code (`privatelink.sae.backup.windowsazure.com`).
+4. Use the prepared [saudi-dns-modules.zip](saudi-dns-modules.zip): right-click it in File Explorer, select **Extract All**, then copy the extracted `hub-and-spoke-vnet` and `private-link-private-dns-zones` folders into your generated repository's existing `modules` folder. Keep `config-templating` untouched and compare existing destination folders before overwriting. The archive is an unchanged copy of the test checkout's module files; no download/copy script is needed. For upstream downloads instead, follow step 3 of the [manual runbook](#post-bootstrap-saudi-dns-module-fix).
+5. Make the root source edit below by hand. The other two edits are already included in the prepared ZIP; verify them. If using the upstream archives instead, apply all three. Preserve every other argument and module block name:
    - In the root's `main.connectivity.hub.and.spoke.virtual.network.tf`, set the existing `hub_and_spoke_vnet` module source to `"./modules/hub-and-spoke-vnet"` and remove its `version` argument.
    - In `modules/hub-and-spoke-vnet/main.tf`, set the existing `private_dns_zones` module source to `"../private-link-private-dns-zones"` and remove its `version` argument.
    - In `modules/private-link-private-dns-zones/locals.tf`, replace only the first region-lookup locals block with:
