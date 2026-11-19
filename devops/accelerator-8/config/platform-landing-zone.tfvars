@@ -252,7 +252,7 @@ management_group_settings = {
         #   overrides = [
         #     {
         #       kind  = "policyEffect"
-        #       value = "Disabled"
+        #       value = "disabled"
         #       selectors = [
         #         {
         #           kind = "policyDefinitionReferenceId"
@@ -293,7 +293,7 @@ management_group_settings = {
           overrides = [
             {
               kind  = "policyEffect"
-              value = "Disabled"
+              value = "disabled"
               selectors = [
                 {
                   kind = "policyDefinitionReferenceId"
@@ -334,7 +334,7 @@ management_group_settings = {
           overrides = [
             {
               kind  = "policyEffect"
-              value = "Disabled"
+              value = "disabled"
               selectors = [
                 {
                   kind = "policyDefinitionReferenceId"

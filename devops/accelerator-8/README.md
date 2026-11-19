@@ -39,7 +39,7 @@ Line references below describe the current configuration snapshot and can shift 
 
 The test copy is ignored by Git and is not included in a fresh clone. Where present, follow its own [README](.local-tests/accelerator-8/README.md); do not copy its tenant-specific configuration into the tracked source or regenerate it. Editing the source does not synchronize the test copy or an already-generated Azure DevOps repository.
 
-> **Do not proceed to deployment yet:** The pinned private DNS module still fails when the Saudi `geo_code` is null. The starter `sae` override and policy region map do not fix that module dependency. Follow [Saudi DNS region short name and policy assignment](#saudi-dns-region-short-name-and-policy-assignment), resolve the dependency, then run a full generated Terraform plan. Also fill in the source subscription/organization placeholders before using the source scenario.
+> **Platform deployment gate:** The pinned private DNS module still fails when the Saudi `geo_code` is null. Bootstrap can prepare the delivery foundation, but before running or approving the platform deployment, follow [Post-bootstrap Saudi DNS module fix](#post-bootstrap-saudi-dns-module-fix) and review a successful generated Terraform plan. The starter `sae` override and policy region map do not fix that module dependency. Fill in the source subscription/organization placeholders before bootstrap.
 
 ## 1. Understand the deployment and region split
 
@@ -427,7 +427,7 @@ The following changes are already applied to the local scenario configuration. S
    overrides = [
      {
        kind  = "policyEffect"
-       value = "Disabled"
+       value = "disabled"
        selectors = [
          {
            kind = "policyDefinitionReferenceId"
@@ -534,7 +534,7 @@ The local configuration now prevents this scenario from automatically enabling D
    | `Enforce-GR-Synapse0` | `synapseDefender` |
    | `Enforce-GR-SQL0` | `sqlManagedDefender` |
 
-   For `Enforce-GR-SQL0` at both scopes, also add a `policyEffect` override of `"Disabled"` selecting `policyDefinitionReferenceId` `"Dine-Sql-Adv-Data"`. That member enables SQL Advanced Data Security without an exposed effect parameter. These assignments are `DoNotEnforce` in the pinned library; the explicit Defender settings also protect against accidental enablement if their enforcement mode is changed later. Other guardrail parameters and enforcement modes are not changed.
+   For `Enforce-GR-SQL0` at both scopes, also add a `policyEffect` override of `"disabled"` selecting `policyDefinitionReferenceId` `"Dine-Sql-Adv-Data"`. The ALZ provider requires this override effect in lowercase; keep the policy parameters in the table as `"Disabled"` because their values are defined separately by the initiatives. That member enables SQL Advanced Data Security without an exposed effect parameter. These assignments are `DoNotEnforce` in the pinned library; the explicit Defender settings also protect against accidental enablement if their enforcement mode is changed later. Other guardrail parameters and enforcement modes are not changed.
 
    For a copyable example, merge these five entries into **each** existing `policy_assignments` map under `platform` and `landingzones`. The source already has both copies. Do not replace the outer `policy_assignments_to_modify` map or remove its `corp` DNS and `alz` entries:
 
@@ -566,7 +566,7 @@ The local configuration now prevents this scenario from automatically enabling D
      overrides = [
        {
          kind  = "policyEffect"
-         value = "Disabled"
+         value = "disabled"
          selectors = [
            {
              kind = "policyDefinitionReferenceId"
@@ -618,9 +618,69 @@ Do not set `private_dns_zone_region` to `sae`: the policy indexes the region map
 
 The `sae` value follows the supplied Saudi mapping; the public region-code document checked earlier did not independently verify it. Review the service's private-link metadata before production use.
 
-**Separate deployment blocker:** These overrides do not populate the internal `geo_code` used by private DNS module `0.23.2`. Its regions dependency `0.12.0` has no Saudi entry, and its unconditional `replace` call rejects a null region code, even for zone names without `{regionCode}`. A verified dependency fix is still required before deploying the private-link zones; changing only the policy map, starter short name, or Backup zone name does not resolve that Terraform error. The auto-registration zone remains `saudiarabiaeast.azure.local`.
+**Separate deployment blocker:** These overrides do not populate the internal `geo_code` used by private DNS module `0.23.2`. Its regions dependency `0.12.0` has no Saudi entry, and its unconditional `replace` call rejects a null region code, even for zone names without `{regionCode}`. Apply the [post-bootstrap fix](#post-bootstrap-saudi-dns-module-fix) before deploying the private-link zones; changing only the policy map, starter short name, or Backup zone name does not resolve that Terraform error. The auto-registration zone remains `saudiarabiaeast.azure.local`.
 
 The DNS overrides are now present in both copies, but future edits are not synchronized automatically. Run the generated repository's validation and Terraform plan before deployment.
+
+### Post-bootstrap Saudi DNS module fix
+
+**Chosen approach:** Keep bootstrap unchanged, then make the fix in the generated platform repository. For a single deployment, committing local copies of the two affected modules is simpler than maintaining two remote forks. The committed copies make the fix reproducible on clean pipeline agents; never patch files under `.terraform`.
+
+This section is an implementation runbook, not confirmation that the generated repository has been patched or that a deployment plan has passed.
+
+Apply this temporary workaround manually after bootstrap. The [end-of-guide checklist](#additional-steps-after-bootstrap) summarizes the required edits and validation. When the expected upstream fix becomes available, verify it before removing this customization.
+
+1. Complete [bootstrap](#8-deploy-the-bootstrap). If it has already completed, do not rerun it just for this error. Keep platform apply blocked while preparing the fix. If a delivery pipeline starts automatically, do not approve its apply stage.
+2. Clone/open the **generated platform repository** and create a normal change branch. Locate the Terraform root containing `main.connectivity.hub.and.spoke.virtual.network.tf` and `platform-landing-zone.auto.tfvars`. All module paths below are relative to that root, not this source scenario folder or the pipeline-template repository.
+3. Confirm the generated module versions match this runbook: starter `v17.7.0`, hub-and-spoke `0.17.2`, private DNS `0.23.2`. For those versions, download the source archives from:
+   - [Hub-and-spoke v0.17.2](https://github.com/Azure/terraform-azurerm-avm-ptn-alz-connectivity-hub-and-spoke-vnet/tree/v0.17.2)
+   - [Private DNS v0.23.2](https://github.com/Azure/terraform-azurerm-avm-ptn-network-private-link-private-dns-zones/tree/v0.23.2)
+
+   Extract the complete module contents into `modules/hub-and-spoke-vnet` and `modules/private-link-private-dns-zones`, respectively. Keep their nested modules, assets, and license/notice files; do not copy Terraform state, credentials, downloaded provider caches, or nested Git repositories. Record the upstream tag and resolved commit SHA for each copy in the change description. If the generated versions differ, inspect that dependency chain before applying this version-specific fix.
+
+4. In the generated root's `main.connectivity.hub.and.spoke.virtual.network.tf`, change only the `source` of the existing `module "hub_and_spoke_vnet"` to:
+
+   ```hcl
+   source = "./modules/hub-and-spoke-vnet"
+   ```
+
+   Remove that module call's `version = "0.17.2"` argument: local module sources do not accept `version`. Preserve the module name, `count`, arguments, and provider mappings.
+
+5. In `modules/hub-and-spoke-vnet/main.tf`, change only the `source` of the existing `module "private_dns_zones"` to:
+
+   ```hcl
+   source = "../private-link-private-dns-zones"
+   ```
+
+   Remove that call's `version = "0.23.2"` argument. Preserve its name, `for_each`, and arguments. These HCL source addresses use Terraform's slash notation even on Windows.
+
+6. Confirm `sae` against the target service's Saudi Backup private-link DNS metadata before using the following change. In `modules/private-link-private-dns-zones/locals.tf`, replace only the first region-lookup `locals` block with:
+
+   ```hcl
+   locals {
+     location_name = module.regions.regions_by_name_or_display_name[var.location].name
+     location_geo_code = local.location_name == "saudiarabiaeast" ? (
+       "sae"
+     ) : module.regions.regions_by_name_or_display_name[var.location].geo_code
+   }
+   ```
+
+   This explicitly supplies the Saudi code and leaves all other regions' lookups unchanged. Keep every subsequent locals block intact. Do not substitute UAE North, use an empty-string fallback, or disable private DNS to bypass the error.
+
+7. Check the generated `platform-landing-zone.auto.tfvars`, not just the source inputs:
+   - Retain `starter_locations = ["saudiarabiaeast"]` and `starter_locations_short.starter_location_01_short = "sae"`.
+   - Retain the `corp` DNS policy modification with `dnzZoneRegionShortNames = { saudiarabiaeast = "sae" }`, alongside the existing modifications for other scopes. Keep the policy's full DNS region as `saudiarabiaeast`.
+   - At both `platform` and `landingzones`, the SQL `policyEffect` override must use `value = "disabled"`. Keep initiative parameters such as `sqlManagedDefender = "Disabled"` unchanged.
+
+8. Format the changed Terraform files and generated variables using `terraform fmt`, then commit the module copies, source-reference changes, and any corrected generated variables to the generated repository. Preserve module block names and instance keys so changing source locations alone does not change resource addresses. No state move or import is expected solely for this source change.
+9. Run CI and the delivery plan from a clean checkout using the normal pipeline identity/backend. Module source changes require `terraform init` before `terraform validate` and plan; keep the existing provider lock file and do not add `-upgrade` for this fix. Do not use this source scenario directory as a Terraform root.
+10. Before approving apply, confirm:
+    - The null `replace` error and both SQL override validation errors are absent.
+    - The Backup zone is `privatelink.sae.backup.windowsazure.com`, and the Corp policy constructs the same zone resource ID.
+    - Auto-registration remains `saudiarabiaeast.azure.local`; private zones and intended VNet links remain enabled.
+    - No unexpected resource deletion, replacement, or address change is planned.
+
+Changing the two sources preserves addresses, but existing deployments still require plan review. Keep the generated-repository customization under version control: regeneration or a future bootstrap/template upgrade may overwrite its source references. Recheck it after upgrades. When a verified upstream release resolves Saudi metadata, switch back through a reviewed change and repeat the same plan checks before removing the local copies.
 
 ### Disable Azure Private DNS Resolver
 
@@ -715,7 +775,7 @@ Before approving bootstrap, confirm:
 - [ ] Azure DevOps permissions, self-hosted concurrency, and approver membership are ready.
 - [ ] `starter_locations` is updated; the retained Defender contact must be reviewed before any future Defender re-enable.
 - [ ] Policy-assignment identity location references the starter region in the configuration selected for deployment.
-- [ ] The Saudi DNS policy map is present at `corp`, the full DNS region remains `saudiarabiaeast`, and the pinned module's null `geo_code` blocker is resolved and verified by a generated Terraform plan.
+- [ ] The Saudi DNS policy map is present at `corp`, the full DNS region remains `saudiarabiaeast`, and the [post-bootstrap DNS fix](#post-bootstrap-saudi-dns-module-fix) is scheduled before platform deployment. A successful generated platform plan is an apply gate, not a prerequisite for creating the bootstrap foundation.
 - [ ] Default gateways, Bastion, and agent infrastructure are approved for deployment and ongoing charges.
 - [ ] Disabled Defender coverage is approved, with any existing plans/agents and ongoing billing assessed separately.
 - [ ] An alternative DNS path is approved for clients that depended on Private DNS Resolver; private zones and bootstrap DNS remain enabled.
@@ -771,7 +831,7 @@ In Azure DevOps:
 
 1. Open the configured project.
 2. Under **Project settings > Agent pools**, verify the generated self-hosted pool is available and the agents are online.
-3. Inspect the generated repositories, including the pipeline-template repository when created.
+3. Inspect the generated repositories, including the pipeline-template repository when created. Complete the [post-bootstrap Saudi DNS module fix](#post-bootstrap-saudi-dns-module-fix) in the platform repository and pass CI before running the delivery pipeline.
 4. Verify the federated plan/apply service connections and apply-environment approvers.
 5. Under **Pipelines**, open **02 Azure landing zone Continuous Delivery**.
 6. Select **Run pipeline**, keep the intended default branch/settings, and run it.
@@ -813,16 +873,42 @@ Revoke the short-lived bootstrap PAT when no longer needed. Maintain an approved
 | --- | --- |
 | ACR deployment fails in Saudi Arabia East | Confirm bootstrap still uses `uaenorth`; `starter_locations` alone should use `saudiarabiaeast` in this design. |
 | Region/service/SKU unavailable | Check subscription access, service rollout, quotas, and zone support. Resolve the specific blocker before applying. |
+| ALZ `policyEffect` override rejects `"Disabled"` | Set the override's `value` to lowercase `"disabled"` at both `platform` and `landingzones`. Do not lowercase initiative parameters such as `sqlManagedDefender = "Disabled"` indiscriminately. |
+| AzureRM says `saudiarabiaeast` is not a supported Azure Location | Follow the metadata-validation checks below. Do not silently relocate resources or assume an environment-variable workaround proves regional access. |
 | ACI zone-related deployment error | Check UAE North support for the requested ACI configuration. If required and approved, set `agent_container_zone_support: false` in bootstrap inputs; assess the separate ACR `container_registry_zone_redundancy_enabled` setting against its support as well. |
 | Agents offline or jobs remain queued | Check ACI provisioning/logs, image pull, PAT validity and pool permissions, DNS/egress, pipeline pool authorization, and self-hosted parallel-job capacity. |
 | Backend access denied or timed out | Check identity data-plane roles, private endpoint approval, DNS, and routing from the actual execution host. Do not turn on public storage access as a shortcut. |
 | Azure DevOps bootstrap returns 401/403 | Check PAT scopes, expiry, organization, underlying user permissions, and whether placeholder YAML PAT values were removed. |
 | `alz_custom` architecture cannot be found | Confirm the complete library is present and `-starterAdditionalFiles` points to it. |
-| `Invalid value for "replace" parameter: argument must not be null` in private DNS locals | The pinned regions module has no Saudi `geo_code`. The starter short-name and policy-map overrides do not fix this; resolve the module dependency before planning/applying zones. |
+| `Invalid value for "replace" parameter: argument must not be null` in private DNS locals | Follow the [post-bootstrap Saudi DNS module fix](#post-bootstrap-saudi-dns-module-fix) in the generated platform repository. The starter short-name and policy-map overrides do not populate the nested module's `geo_code`. Do not edit the `.terraform` cache or rerun bootstrap just for this fix. |
 | DNS policy fails to index `dnzZoneRegionShortNames` | Keep `private_dns_zone_region` as `saudiarabiaeast`, ensure the map contains that key, and extend the entire replacement map when using other DNS regions. Confirm the override targets the actual Corp management-group ID. |
 | Editing the source does not affect a test run or existing pipeline | Check `$targetFolderPath`; local test configuration and generated Azure DevOps repositories are separate copies. Deliver related variables and library changes together to the copy actually being used. |
 | Traffic follows an unreachable NVA next hop | Deploy/configure the appliance and reconcile its IP with `primary_nva_ip_address`; the scenario only prepares the NVA integration. |
 | Allowed-location policy denies UAE resources | Obtain the approved bootstrap scope exception or permitted-location design; keep Saudi workload restrictions intact. |
+
+#### AzureRM 4.x rejects the Saudi location before contacting the resource API
+
+The starter constrains AzureRM to `~> 4.0`. In AzureRM 4.x, enhanced validation can reject a newly available region using its Azure metadata location list before a resource-group request reaches Azure. The reported error alone does not distinguish metadata lag from missing subscription access.
+
+1. In the failing pipeline, check the selected AzureRM version in `.terraform.lock.hcl` or the `terraform init` output. Using the **same service-connection identity**, verify Saudi Arabia East is visible in each relevant subscription and that the required resource types/SKUs are available. A successful check using a workstation user's identity or another subscription is not sufficient.
+2. If the region is authorized and this is a metadata-list limitation, add this **non-secret** variable to the existing Azure DevOps Library variable group imported by the generated CI and CD pipelines:
+
+   | Variable | Value |
+   | --- | --- |
+   | `ARM_PROVIDER_ENHANCED_VALIDATION` | `false` |
+
+   The generated templates import the group for validation, plan, and apply. Non-secret group variables are exposed to task environments. Alternatively, merge the following into the existing `env` map on each affected Terraform validation/plan/apply task in the generated templates repository:
+
+   ```yaml
+   env:
+     ARM_PROVIDER_ENHANCED_VALIDATION: "false"
+   ```
+
+   Keep existing environment entries such as `TERRAFORM_ACTION`. Do not modify only the downloaded bootstrap cache: those edits do not update a running Azure DevOps pipeline.
+3. This legacy setting is supported by AzureRM 4.x and disables its metadata-based enhanced checks, including resource-provider checks. It does **not** disable Azure Policy, authentication, RBAC, regional restrictions, quota checks, or Azure's validation of actual deployment requests. Use it as an explicit temporary exception, not evidence that deployment will succeed. With versions that support `ARM_PROVIDER_ENHANCED_VALIDATION_LOCATIONS`, prefer that location-only setting instead; do not combine it with the legacy variable. Reassess the setting when upgrading providers.
+4. Deliver the corrected variables file to the generated platform repository too. For the existing local test, its generated `platform-landing-zone.auto.tfvars` was corrected locally alongside the source inputs, but the remote repository is a separate copy. Rerun CI and review a new delivery plan before any apply.
+
+The lowercase override fix and this AzureRM metadata setting address different errors. Neither resolves the separate private-DNS-module null `geo_code` blocker documented above.
 
 ## 11. Track all scenarios in the root Git repository
 
@@ -873,3 +959,44 @@ Official guidance consulted on 19 November 2026; recheck it and regional availab
 - [Pinned starter short-name replacement precedence](https://github.com/Azure/alz-terraform-accelerator/blob/v17.7.0/templates/platform_landing_zone/modules/config-templating/locals.config.tf)
 - [Pinned DNS module region-code substitution](https://github.com/Azure/terraform-azurerm-avm-ptn-network-private-link-private-dns-zones/blob/v0.23.2/locals.tf)
 - [Pinned regions module geo-code map](https://github.com/Azure/terraform-azurerm-avm-utl-regions/blob/v0.12.0/locals.geo.codes.tf.json)
+- [AzureRM 4.x enhanced-validation environment variable](https://github.com/hashicorp/terraform-provider-azurerm/blob/v4.0.0/internal/features/enhanced_validation.go)
+- [AzureRM 4.77 enhanced-validation controls and conflicting-variable checks](https://github.com/hashicorp/terraform-provider-azurerm/blob/v4.77.0/internal/features/enhanced_validation.go)
+
+## Additional steps after bootstrap
+
+Apply this **temporary manual workaround** in the generated platform repository after bootstrap. No helper, script, or pipeline cache patch is required. An upstream fix is expected next month, but its release/version is not verified here; remove the workaround only after testing a release that fixes the Saudi lookup.
+
+1. Complete bootstrap once. If it already completed, do not rerun it for the DNS error. Keep platform apply blocked.
+2. Clone/open the generated platform repository and create a change branch. Locate its Terraform root containing `main.connectivity.hub.and.spoke.virtual.network.tf`. Do not edit the bootstrap directory or downloaded starter cache.
+3. Confirm through the target service's private-link metadata that Saudi Backup uses `privatelink.sae.backup.windowsazure.com`.
+4. Download the complete [hub-and-spoke v0.17.2](https://github.com/Azure/terraform-azurerm-avm-ptn-alz-connectivity-hub-and-spoke-vnet/tree/v0.17.2) and [private DNS v0.23.2](https://github.com/Azure/terraform-azurerm-avm-ptn-network-private-link-private-dns-zones/tree/v0.23.2) source archives. Extract their contents under the generated Terraform root as `modules/hub-and-spoke-vnet` and `modules/private-link-private-dns-zones`. Keep nested modules, assets, and license/notice files. If your generated module versions differ, reassess this version-specific workaround first.
+5. Make these three edits by hand, preserving every other argument and module block name:
+   - In the root's `main.connectivity.hub.and.spoke.virtual.network.tf`, set the existing `hub_and_spoke_vnet` module source to `"./modules/hub-and-spoke-vnet"` and remove its `version` argument.
+   - In `modules/hub-and-spoke-vnet/main.tf`, set the existing `private_dns_zones` module source to `"../private-link-private-dns-zones"` and remove its `version` argument.
+   - In `modules/private-link-private-dns-zones/locals.tf`, replace only the first region-lookup locals block with:
+
+   ```hcl
+   locals {
+     location_name = module.regions.regions_by_name_or_display_name[var.location].name
+     location_geo_code = local.location_name == "saudiarabiaeast" ? (
+       "sae"
+     ) : module.regions.regions_by_name_or_display_name[var.location].geo_code
+   }
+   ```
+
+6. In the generated variables, retain the Saudi starter and Corp policy maps. Ensure both SQL policy-effect overrides use lowercase `"disabled"` while initiative parameters retain `"Disabled"`; the source [configuration](config/platform-landing-zone.tfvars) already contains that casing fix. Preserve environment-specific subscription settings.
+7. From the generated Terraform root, run these commands individually, stopping if any fails:
+
+   ```powershell
+   terraform fmt main.connectivity.hub.and.spoke.virtual.network.tf
+   terraform fmt modules\hub-and-spoke-vnet\main.tf
+   terraform fmt modules\private-link-private-dns-zones\locals.tf
+   terraform init -backend=false -input=false
+   terraform validate
+   ```
+
+8. Review and commit the two module directories, root module source change, and any corrected generated variables through the generated repository's normal change process. Retain the provider lock file and avoid unrelated dependency upgrades. This source documentation does not make those remote changes automatically.
+9. Run normal authenticated CI and the delivery plan, including initialization of the real backend. Local validation does not replace a plan. Before approving apply, verify that both reported errors are gone, Backup zone naming agrees with the policy, auto-registration and VNet links remain intact, and no unexpected replacements or deletions are planned.
+10. Once an upstream fix is released, verify that the hub-and-spoke release actually consumes the corrected DNS/regions dependency. Restore the registry module source with that tested version, initialize and review a new plan, then remove the unused local copies in the same reviewed change. Do not assume upgrading the starter or DNS module alone fixes the nested dependency.
+
+The expanded [manual runbook](#post-bootstrap-saudi-dns-module-fix) explains the module wiring and safeguards. Never edit `.terraform` as the permanent fix or commit bootstrap output, state, plans, credentials, or caches.
