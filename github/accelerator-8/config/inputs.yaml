@@ -8,7 +8,8 @@
 # You can find them here: https://aka.ms/alz/acc/bootstrap/github/variables
 
 ## Decision 4: Bootstrap Resource Azure Region
-bootstrap_location: "<region-1>"
+# Bootstrap resources stay in UAE North while Azure Container Registry is unavailable in Saudi Arabia East.
+bootstrap_location: "uaenorth"
 
 ## Decision 6: Parent Management Group
 root_parent_management_group_id: ""  # Leave empty to use Tenant Root Group
@@ -21,7 +22,7 @@ subscription_ids:
   security: "<security-subscription-id>"
 
 ## Decision 8: Bootstrap Resource Subscription
-bootstrap_subscription_id: ""  # Leave empty to use the subscription connected to Azure CLI
+bootstrap_subscription_id: "<management-subscription-id>"  # Use the management subscription
 
 ## Decision 9: Bootstrap Resource Naming.
 # Default names can be found here: https://aka.ms/alz/acc/bootstrap/github/resourcenames
@@ -34,12 +35,22 @@ postfix_number: 1
 use_self_hosted_runners: true
 use_private_networking: true
 
+# Dedicated bootstrap VNet (UAE North); must not overlap hub 10.0.0.0/22 or corporate ranges
+virtual_network_address_space: "10.250.0.0/24"
+virtual_network_subnet_address_prefix_container_instances: "10.250.0.0/26"
+virtual_network_subnet_address_prefix_private_endpoints: "10.250.0.64/26"
+allow_storage_access_from_my_ip: false
+
 ## Decision 11: Version Control System Settings
-github_personal_access_token: "<token-1>"  # Can also be supplied via environment variable TF_VAR_github_personal_access_token
-github_runners_personal_access_token: "<token-2>"  # Can also be supplied via environment variable TF_VAR_github_runners_personal_access_token
+# github_personal_access_token: "<token-1>"  # Can also be supplied via environment variable TF_VAR_github_personal_access_token
+# github_runners_personal_access_token: "<token-2>"  # Can also be supplied via environment variable TF_VAR_github_runners_personal_access_token
 github_organization_name: "<github-organization>" # This is the section of the URL after 'github.com'. Example: enter 'my-org' for 'https://github.com/my-org'
 # github_organization_domain_name: "<enterprise name>.ghe.com" # Uncomment for GitHub Enterprise Cloud with data residency
 apply_approvers: ["<github_user1>"] # list of approvers for the "apply" stage in GitHub Actions workflows. A list (array) of GitHub usernames or team slugs. For teams, use the format: "org/team-name", For individual users, use their GitHub username. EXAMPLE: apply_approvers: ["user1", "user2", "org/team-name"]
+
+# Version pins
+starter_module_version: "v17.7.0"
+terraform_version: "1.14.9"
 
 # Basic Inputs (Do not modify)
 iac_type: "terraform"
