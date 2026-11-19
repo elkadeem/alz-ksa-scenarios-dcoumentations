@@ -799,7 +799,34 @@ If these overlap your estate, update the related `primary_*` address replacement
 
 ### Review enabled services before planning
 
-The checked-in configuration enables ExpressRoute and VPN gateways, Bastion, private DNS zones, and management groups with the remaining policies. Private DNS Resolver, DDoS Network Protection, the Log Analytics management-resources bundle, and automatic Defender enablement/deployment policies are disabled as described above. Azure Firewall is disabled because this is an NVA scenario.
+The checked-in configuration enables ExpressRoute and VPN gateways, Bastion without availability zones, private DNS zones, and management groups with the remaining policies. Private DNS Resolver, DDoS Network Protection, the Log Analytics management-resources bundle, and automatic Defender enablement/deployment policies are disabled. Azure Firewall is disabled because this is an NVA scenario.
+
+### Fix `BastionRegionAzNotSupported` without disabling Bastion
+
+The reported Saudi Arabia East deployment rejected a Bastion host with availability zones. Keep `custom_replacements.names.primary_bastion_enabled = true` and explicitly disable zones only for the Bastion host. Leave the public IP's `zones` setting unset so it uses the networking module's default behavior. The checked-in `hub_virtual_networks.primary.bastion` block already contains:
+
+```hcl
+bastion = {
+  subnet_address_prefix = "$${primary_bastion_subnet_address_prefix}"
+  name                  = "$${primary_bastion_host_name}"
+  zones                 = []
+  bastion_public_ip = {
+    name = "$${primary_bastion_host_public_ip_name}"
+  }
+}
+```
+
+Merge this into the existing hub block, not at the top level. The host's `zones = []` explicitly selects no zones. Remove any `zones = []` override from `bastion_public_ip`; the public IP retains the networking module's default zone behavior. This does not change gateway zones or SKUs and does not provide zone-redundant Bastion.
+
+This source edit does not update the isolated test copy, an already-generated Azure DevOps repository, or deployed resources. For an already-bootstrapped environment:
+
+1. Make the equivalent edits in the generated repository's `platform-landing-zone.auto.tfvars`, preserving its existing names and other settings. Do not edit `.terraform/modules`.
+2. Run the existing validation and plan pipeline. Confirm the Bastion host has no requested availability zones, inspect the public IP's module-default zones, and review any replacements or deletions before approval. An existing public IP may need replacement, changing its address and interrupting administrative access.
+3. Apply the reviewed plan using the delivery pipeline. If Terraform reports that the failed Bastion host already exists, inspect its provisioning state and Terraform state before deciding whether an import or other recovery is needed; do not delete resources or remove state blindly.
+
+The `randomization_factor` deprecation messages are separate warnings, not the cause of `BastionRegionAzNotSupported`. They require a separate dependency compatibility review; suppressing them or changing cached module files does not fix this Bastion failure.
+
+### Confirm regional availability and prepare the NVA
 
 Check Saudi Arabia East availability and subscription capacity for every enabled service and SKU. Region visibility alone does not prove that a service or SKU is deployable. If a service is unavailable, stop and agree an explicit design change; do not silently move it outside Saudi Arabia.
 
@@ -848,6 +875,7 @@ Before approving bootstrap, confirm:
 - [ ] Policy-assignment identity location references the starter region in the configuration selected for deployment.
 - [ ] The Saudi DNS policy map is present at `corp`, the full DNS region remains `saudiarabiaeast`, and the [post-bootstrap DNS fix](#post-bootstrap-saudi-dns-module-fix) is scheduled before platform deployment. A successful generated platform plan is an apply gate, not a prerequisite for creating the bootstrap foundation.
 - [ ] Default gateways, Bastion, and agent infrastructure are approved for deployment and ongoing charges.
+- [ ] Only the Bastion host explicitly uses `zones = []` in the configuration selected for deployment; the public IP's `zones` setting is unset and its planned zones are reviewed. Any planned replacements and administrative access interruption are approved.
 - [ ] Disabled Defender coverage is approved, with any existing plans/agents and ongoing billing assessed separately.
 - [ ] An alternative DNS path is approved for clients that depended on Private DNS Resolver; private zones and bootstrap DNS remain enabled.
 - [ ] The chosen DDoS configuration is explicit: source-disabled or test-style enabled. Availability, protection strategy, policy assignments, associations, and any planned deletions/replacements have been reviewed.

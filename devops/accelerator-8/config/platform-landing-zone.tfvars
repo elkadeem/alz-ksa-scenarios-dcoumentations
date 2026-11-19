@@ -474,6 +474,7 @@ hub_virtual_networks = {
     bastion = {
       subnet_address_prefix = "$${primary_bastion_subnet_address_prefix}"
       name                  = "$${primary_bastion_host_name}"
+      zones                 = []
       bastion_public_ip = {
         name = "$${primary_bastion_host_public_ip_name}"
       }
