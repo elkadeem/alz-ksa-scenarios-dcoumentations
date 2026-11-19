@@ -8,7 +8,7 @@
 # You can find them here: https://aka.ms/alz/acc/bootstrap/azuredevops/variables
 
 ## Decision 4: Bootstrap Resource Azure Region
-bootstrap_location: "<region-1>"
+bootstrap_location: "uaenorth"
 
 ## Decision 6: Parent Management Group
 root_parent_management_group_id: ""  # Leave empty to use Tenant Root Group
@@ -21,7 +21,7 @@ subscription_ids:
   security: "<security-subscription-id>"
 
 ## Decision 8: Bootstrap Resource Subscription
-bootstrap_subscription_id: ""  # Leave empty to use the subscription connected to Azure CLI
+bootstrap_subscription_id: "<management-subscription-id>"  # Use the management subscription
 
 ## Decision 9: Bootstrap Resource Naming.
 # Default names can be found here: https://aka.ms/alz/acc/bootstrap/azuredevops/resourcenames
@@ -34,12 +34,22 @@ postfix_number: 1
 use_self_hosted_agents: true
 use_private_networking: true
 
+# Bootstrap network (UAE North), kept clear of the 10.0.0.0/16 platform range
+virtual_network_address_space: "10.250.0.0/24"
+virtual_network_subnet_address_prefix_container_instances: "10.250.0.0/26"
+virtual_network_subnet_address_prefix_private_endpoints: "10.250.0.64/26"
+allow_storage_access_from_my_ip: false
+
 ## Decision 11: Version Control System Settings
-azure_devops_personal_access_token: "<token-1>"  # Can also be supplied via environment variable TF_VAR_azure_devops_personal_access_token
-azure_devops_agents_personal_access_token: "<token-2>"  # Can also be supplied via environment variable TF_VAR_azure_devops_agents_personal_access_token
+# azure_devops_personal_access_token: "<token-1>"  # Supply via environment variable TF_VAR_azure_devops_personal_access_token
+# azure_devops_agents_personal_access_token: "<token-2>"  # Supply via environment variable TF_VAR_azure_devops_agents_personal_access_token
 azure_devops_organization_name: "<azure-devops-organization>"
 azure_devops_project_name: "<azure-devops-project-name>"
 apply_approvers: ["<email-address>"]
+
+# Version pins
+starter_module_version: "v17.7.0"
+terraform_version: "1.14.9"
 
 # Basic Inputs (Do not modify)
 iac_type: "terraform"
