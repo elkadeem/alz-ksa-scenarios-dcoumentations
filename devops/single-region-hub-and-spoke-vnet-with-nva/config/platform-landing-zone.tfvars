@@ -172,8 +172,10 @@ management_group_settings = {
   # It refers to the alz_custom.alz_architecture_definition.yaml file in the lib folder.
   # Do not change this value unless you have created another architecture definition
   # with the name value specified below.
-  architecture_name  = "alz_custom"
-  location           = "$${starter_location_01}"
+  architecture_name = "alz_custom"
+  # Policy-assignment managed identities failed in saudiarabiaeast in two independent tests;
+  # UAE North is the identity-only exception. Workload resources stay in Saudi Arabia East.
+  location           = "uaenorth"
   parent_resource_id = "$${root_parent_management_group_id}"
   policy_default_values = {
     # Retained for re-enabling Log Analytics and AMA.
@@ -424,6 +426,10 @@ hub_virtual_networks = {
         nva = {
           name             = "$${primary_subnet_nva_name}"
           address_prefixes = ["$${primary_nva_subnet_address_prefix}"]
+          # Do not route the appliance subnet through its own next hop (0.0.0.0/0 -> NVA IP).
+          route_table = {
+            assign_generated_route_table = false
+          }
         }
       }
     }
@@ -448,12 +454,16 @@ hub_virtual_networks = {
             # name = "vnetGatewayConfigactive_active_1"  # For backwards compatibility with previous naming, uncomment this line
             public_ip = {
               name = "$${primary_virtual_network_gateway_vpn_public_ip_name_1}"
+              # MCAPS only: uncomment when applied policies require this IP tag.
+              # ip_tags = { FirstPartyUsage = "/Unprivileged" }
             }
           }
           active_active_2 = {
             # name = "vnetGatewayConfigactive_active_2"  # For backwards compatibility with previous naming, uncomment this line
             public_ip = {
               name = "$${primary_virtual_network_gateway_vpn_public_ip_name_2}"
+              # MCAPS only: uncomment when applied policies require this IP tag.
+              # ip_tags = { FirstPartyUsage = "/Unprivileged" }
             }
           }
         }
@@ -478,6 +488,8 @@ hub_virtual_networks = {
       bastion_public_ip = {
         name  = "$${primary_bastion_host_public_ip_name}"
         zones = []
+        # MCAPS only: uncomment when applied policies require this IP tag.
+        # ip_tags = { FirstPartyUsage = "/Unprivileged" }
       }
     }
   }
