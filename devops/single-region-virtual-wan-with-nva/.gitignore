@@ -1,0 +1,15 @@
+/output/
+/temp/
+/.local-tests/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12

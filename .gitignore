@@ -13,3 +13,5 @@ crash.*.log
 *.key
 *.pfx
 *.p12
+
+scenarios.ps1
