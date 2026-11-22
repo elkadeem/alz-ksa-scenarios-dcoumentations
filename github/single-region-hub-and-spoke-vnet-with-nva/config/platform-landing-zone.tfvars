@@ -18,7 +18,10 @@ Replacements are denoted by the dollar-dollar curly braces token (e.g. $${starte
 You can define the Azure regions to use throughout the configuration.
 The first location will be used as the primary location, the second as the secondary location, and so on.
 */
-starter_locations = ["<region-1>"]
+starter_locations = ["saudiarabiaeast"]
+starter_locations_short = {
+  starter_location_01_short = "sae"
+}
 
 /*
 --- Custom Replacements ---
@@ -52,15 +55,15 @@ custom_replacements = {
     dcr_vm_insights_name                    = "dcr-vm-insights"
 
     # Resource provisioning global connectivity
-    ddos_protection_plan_enabled = true
+    ddos_protection_plan_enabled = false
 
     # Resource provisioning primary connectivity
-    primary_virtual_network_gateway_express_route_enabled                = true
+    primary_virtual_network_gateway_express_route_enabled                = false
     primary_virtual_network_gateway_express_route_hobo_public_ip_enabled = true
     primary_virtual_network_gateway_vpn_enabled                          = true
     primary_private_dns_zones_enabled                                    = true
     primary_private_dns_auto_registration_zone_enabled                   = true
-    primary_private_dns_resolver_enabled                                 = true
+    primary_private_dns_resolver_enabled                                 = false
     primary_bastion_enabled                                              = true
 
     # Resource names primary connectivity
@@ -133,7 +136,7 @@ tags = {
 --- Management Resources ---
 You can use this section to customize the management resources that will be deployed.
 */
-management_resources_enabled = true
+management_resources_enabled = false
 
 management_resource_settings = {
   location                     = "$${starter_location_01}"
@@ -169,24 +172,27 @@ management_group_settings = {
   # It refers to the alz_custom.alz_architecture_definition.yaml file in the lib folder.
   # Do not change this value unless you have created another architecture definition
   # with the name value specified below.
-  architecture_name  = "alz_custom"
-  location           = "$${starter_location_01}"
+  architecture_name = "alz_custom"
+  # Policy-assignment managed identities failed in saudiarabiaeast in two independent tests;
+  # UAE North is the identity-only exception. Workload resources stay in Saudi Arabia East.
+  location           = "uaenorth"
   parent_resource_id = "$${root_parent_management_group_id}"
   policy_default_values = {
-    ama_change_tracking_data_collection_rule_id = "$${ama_change_tracking_data_collection_rule_id}"
-    ama_mdfc_sql_data_collection_rule_id        = "$${ama_mdfc_sql_data_collection_rule_id}"
-    ama_vm_insights_data_collection_rule_id     = "$${ama_vm_insights_data_collection_rule_id}"
-    ama_user_assigned_managed_identity_id       = "$${ama_user_assigned_managed_identity_id}"
-    ama_user_assigned_managed_identity_name     = "$${ama_user_assigned_managed_identity_name}"
-    log_analytics_workspace_id                  = "$${log_analytics_workspace_id}"
-    ddos_protection_plan_id                     = "$${ddos_protection_plan_id}"
-    private_dns_zone_subscription_id            = "$${subscription_id_connectivity}"
-    private_dns_zone_region                     = "$${starter_location_01}"
-    private_dns_zone_resource_group_name        = "$${dns_resource_group_name}"
-    resource_group_name_service_health_alerts   = "$${service_health_alerts_resource_group_name}"
-    resource_group_name_mdfc                    = "$${asc_export_resource_group_name}"
-    resource_group_location                     = "$${starter_location_01}"
-    email_security_contact                      = "$${defender_email_security_contact}"
+    # Retained for re-enabling Log Analytics and AMA.
+    # ama_change_tracking_data_collection_rule_id = "$${ama_change_tracking_data_collection_rule_id}"
+    # ama_mdfc_sql_data_collection_rule_id        = "$${ama_mdfc_sql_data_collection_rule_id}"
+    # ama_vm_insights_data_collection_rule_id     = "$${ama_vm_insights_data_collection_rule_id}"
+    # ama_user_assigned_managed_identity_id       = "$${ama_user_assigned_managed_identity_id}"
+    # ama_user_assigned_managed_identity_name     = "$${ama_user_assigned_managed_identity_name}"
+    # log_analytics_workspace_id                  = "$${log_analytics_workspace_id}"
+    # ddos_protection_plan_id = "$${ddos_protection_plan_id}"
+    private_dns_zone_subscription_id          = "$${subscription_id_connectivity}"
+    private_dns_zone_region                   = "$${starter_location_01}"
+    private_dns_zone_resource_group_name      = "$${dns_resource_group_name}"
+    resource_group_name_service_health_alerts = "$${service_health_alerts_resource_group_name}"
+    # resource_group_name_mdfc = "$${asc_export_resource_group_name}"
+    resource_group_location = "$${starter_location_01}"
+    # email_security_contact = "$${defender_email_security_contact}"
     /*
     # Example of allowed locations for Sovereign Landing Zones policies
     allowed_locations = [
@@ -213,23 +219,132 @@ management_group_settings = {
     }
   }
   policy_assignments_to_modify = {
+    # Keep this key aligned with the corp management-group ID in the custom architecture.
+    corp = {
+      policy_assignments = {
+        Deploy-Private-DNS-Zones = {
+          parameters = {
+            # Replaces the default region map; extend it before using other DNS regions.
+            dnzZoneRegionShortNames = {
+              saudiarabiaeast = "sae"
+            }
+          }
+        }
+      }
+    }
     alz = {
       policy_assignments = {
-        Deploy-MDFC-Config-H224 = {
+        # Retained for re-enabling Defender; the assignment is excluded in root_custom.
+        # Deploy-MDFC-Config-H224 = {
+        #   parameters = {
+        #     logAnalytics                                = ""
+        #     enableAscForServers                         = "DeployIfNotExists"
+        #     enableAscForServersVulnerabilityAssessments = "DeployIfNotExists"
+        #     enableAscForSql                             = "DeployIfNotExists"
+        #     enableAscForAppServices                     = "DeployIfNotExists"
+        #     enableAscForStorage                         = "DeployIfNotExists"
+        #     enableAscForContainers                      = "DeployIfNotExists"
+        #     enableAscForKeyVault                        = "DeployIfNotExists"
+        #     enableAscForSqlOnVm                         = "DeployIfNotExists"
+        #     enableAscForArm                             = "DeployIfNotExists"
+        #     enableAscForOssDb                           = "DeployIfNotExists"
+        #     enableAscForCosmosDbs                       = "DeployIfNotExists"
+        #     enableAscForCspm                            = "DeployIfNotExists"
+        #   }
+        #   overrides = [
+        #     {
+        #       kind  = "policyEffect"
+        #       value = "disabled"
+        #       selectors = [
+        #         {
+        #           kind = "policyDefinitionReferenceId"
+        #           in   = ["ascExport", "defenderforKubernetes"]
+        #         }
+        #       ]
+        #     }
+        #   ]
+        # }
+      }
+    }
+    platform = {
+      policy_assignments = {
+        Enforce-GR-MySQL0 = {
           parameters = {
-            enableAscForServers                         = "DeployIfNotExists"
-            enableAscForServersVulnerabilityAssessments = "DeployIfNotExists"
-            enableAscForSql                             = "DeployIfNotExists"
-            enableAscForAppServices                     = "DeployIfNotExists"
-            enableAscForStorage                         = "DeployIfNotExists"
-            enableAscForContainers                      = "DeployIfNotExists"
-            enableAscForKeyVault                        = "DeployIfNotExists"
-            enableAscForSqlOnVm                         = "DeployIfNotExists"
-            enableAscForArm                             = "DeployIfNotExists"
-            enableAscForOssDb                           = "DeployIfNotExists"
-            enableAscForCosmosDbs                       = "DeployIfNotExists"
-            enableAscForCspm                            = "DeployIfNotExists"
+            mySqlAdvThreatProtection = "Disabled"
           }
+        }
+        Enforce-GR-PostgreSQL0 = {
+          parameters = {
+            postgreSqlAdvThreatProtection = "Disabled"
+          }
+        }
+        Enforce-GR-Storage0 = {
+          parameters = {
+            storageThreatProtection = "Disabled"
+          }
+        }
+        Enforce-GR-Synapse0 = {
+          parameters = {
+            synapseDefender = "Disabled"
+          }
+        }
+        Enforce-GR-SQL0 = {
+          parameters = {
+            sqlManagedDefender = "Disabled"
+          }
+          overrides = [
+            {
+              kind  = "policyEffect"
+              value = "disabled"
+              selectors = [
+                {
+                  kind = "policyDefinitionReferenceId"
+                  in   = ["Dine-Sql-Adv-Data"]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+    landingzones = {
+      policy_assignments = {
+        Enforce-GR-MySQL0 = {
+          parameters = {
+            mySqlAdvThreatProtection = "Disabled"
+          }
+        }
+        Enforce-GR-PostgreSQL0 = {
+          parameters = {
+            postgreSqlAdvThreatProtection = "Disabled"
+          }
+        }
+        Enforce-GR-Storage0 = {
+          parameters = {
+            storageThreatProtection = "Disabled"
+          }
+        }
+        Enforce-GR-Synapse0 = {
+          parameters = {
+            synapseDefender = "Disabled"
+          }
+        }
+        Enforce-GR-SQL0 = {
+          parameters = {
+            sqlManagedDefender = "Disabled"
+          }
+          overrides = [
+            {
+              kind  = "policyEffect"
+              value = "disabled"
+              selectors = [
+                {
+                  kind = "policyDefinitionReferenceId"
+                  in   = ["Dine-Sql-Adv-Data"]
+                }
+              ]
+            }
+          ]
         }
       }
     }
@@ -311,6 +426,10 @@ hub_virtual_networks = {
         nva = {
           name             = "$${primary_subnet_nva_name}"
           address_prefixes = ["$${primary_nva_subnet_address_prefix}"]
+          # Do not route the appliance subnet through its own next hop (0.0.0.0/0 -> NVA IP).
+          route_table = {
+            assign_generated_route_table = false
+          }
         }
       }
     }
@@ -335,12 +454,16 @@ hub_virtual_networks = {
             # name = "vnetGatewayConfigactive_active_1"  # For backwards compatibility with previous naming, uncomment this line
             public_ip = {
               name = "$${primary_virtual_network_gateway_vpn_public_ip_name_1}"
+              # MCAPS only: uncomment when applied policies require this IP tag.
+              # ip_tags = { FirstPartyUsage = "/Unprivileged" }
             }
           }
           active_active_2 = {
             # name = "vnetGatewayConfigactive_active_2"  # For backwards compatibility with previous naming, uncomment this line
             public_ip = {
               name = "$${primary_virtual_network_gateway_vpn_public_ip_name_2}"
+              # MCAPS only: uncomment when applied policies require this IP tag.
+              # ip_tags = { FirstPartyUsage = "/Unprivileged" }
             }
           }
         }
@@ -361,8 +484,12 @@ hub_virtual_networks = {
     bastion = {
       subnet_address_prefix = "$${primary_bastion_subnet_address_prefix}"
       name                  = "$${primary_bastion_host_name}"
+      zones                 = []
       bastion_public_ip = {
-        name = "$${primary_bastion_host_public_ip_name}"
+        name  = "$${primary_bastion_host_public_ip_name}"
+        zones = []
+        # MCAPS only: uncomment when applied policies require this IP tag.
+        # ip_tags = { FirstPartyUsage = "/Unprivileged" }
       }
     }
   }

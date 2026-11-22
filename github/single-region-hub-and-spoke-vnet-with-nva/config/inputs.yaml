@@ -8,7 +8,7 @@
 # You can find them here: https://aka.ms/alz/acc/bootstrap/github/variables
 
 ## Decision 4: Bootstrap Resource Azure Region
-bootstrap_location: "<region-1>"
+bootstrap_location: "uaenorth"
 
 ## Decision 6: Parent Management Group
 root_parent_management_group_id: ""  # Leave empty to use Tenant Root Group
@@ -30,16 +30,27 @@ service_name: "alz"
 environment_name: "mgmt"
 postfix_number: 1
 
-## Decision 10: Bootstrap Networking and Agents
+## Decision 10: Bootstrap Networking and Runners
 use_self_hosted_runners: true
 use_private_networking: true
+allow_storage_access_from_my_ip: false
+
+# Example bootstrap ranges: approve against corporate, VPN, ExpressRoute and the Saudi hub (10.0.0.0/16) first.
+virtual_network_address_space: "10.250.0.0/24"
+virtual_network_subnet_address_prefix_container_instances: "10.250.0.0/26"
+virtual_network_subnet_address_prefix_private_endpoints: "10.250.0.64/26"
 
 ## Decision 11: Version Control System Settings
-github_personal_access_token: "<token-1>"  # Can also be supplied via environment variable TF_VAR_github_personal_access_token
-github_runners_personal_access_token: "<token-2>"  # Can also be supplied via environment variable TF_VAR_github_runners_personal_access_token
+# github_personal_access_token: "<token-1>"  # Supply via environment variable TF_VAR_github_personal_access_token
+# github_runners_personal_access_token: "<token-2>"  # Supply via environment variable TF_VAR_github_runners_personal_access_token
 github_organization_name: "<github-organization>" # This is the section of the URL after 'github.com'. Example: enter 'my-org' for 'https://github.com/my-org'
 # github_organization_domain_name: "<enterprise name>.ghe.com" # Uncomment for GitHub Enterprise Cloud with data residency
+# Required: the CD workflow also runs on every push to main; the apply approval gate must not be empty.
 apply_approvers: ["<github_user1>"] # list of approvers for the "apply" stage in GitHub Actions workflows. A list (array) of GitHub usernames or team slugs. For teams, use the format: "org/team-name", For individual users, use their GitHub username. EXAMPLE: apply_approvers: ["user1", "user2", "org/team-name"]
+
+# Version pins
+starter_module_version: "v17.7.0"
+terraform_version: "1.14.9"
 
 # Basic Inputs (Do not modify)
 iac_type: "terraform"
