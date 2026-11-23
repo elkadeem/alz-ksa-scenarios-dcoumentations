@@ -384,6 +384,15 @@ env:
 
 Separate jobs do not share task environments. This disables only stale location validation, not resource-provider validation. Never combine it with legacy `ARM_PROVIDER_ENHANCED_VALIDATION`; the provider rejects the combination. Use the broader legacy switch only on an older provider without the location-specific switch and with explicit approval. Neither bypasses Policy, RBAC, quota, regional access, or ARM validation, and neither fixes DNS metadata or SQL casing. Reassess on upgrades.
 
+For that explicitly approved older-provider workaround, merge this into the top-level `variables` block of each generated CI/CD pipeline YAML:
+
+```yaml
+variables:
+  ARM_PROVIDER_ENHANCED_VALIDATION: 'false'
+```
+
+This skips enhanced location and resource-provider validation, not `terraform validate` or Azure-side validation. Do not combine it with `ARM_PROVIDER_ENHANCED_VALIDATION_LOCATIONS` or `ARM_PROVIDER_ENHANCED_VALIDATION_RESOURCES`, including settings inherited from variable groups or task environments.
+
 Alternatively, bake the location-only setting into bootstrap: clone `https://github.com/Azure/accelerator-bootstrap-modules.git` at `v7.3.2` outside this repository, add the line to the AzureCLI task's `env:` in both `alz\azuredevops\pipelines\terraform\templates\helpers\terraform-plan.yaml` and `terraform-apply.yaml`, and add `-bootstrapModuleOverrideFolderPath <clone>` to the bootstrap command.
 
 ### Bootstrap review and platform deployment

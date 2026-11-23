@@ -570,6 +570,15 @@ In Azure DevOps:
 4. If an existing remote repository was not updated, deliver the changes through its normal pull-request process. Do not assume rerunning bootstrap republishes or selects your local files.
 5. Run CI and **02 Azure landing zone Continuous Delivery** against the intended branch. Authorize only the intended pipeline's required service connections, pool, repositories, variable groups, and environments.
 
+For an explicitly approved legacy provider-validation workaround on an older AzureRM provider without the location-specific switch, merge this into the top-level `variables` block of each generated CI/CD pipeline YAML:
+
+```yaml
+variables:
+  ARM_PROVIDER_ENHANCED_VALIDATION: 'false'
+```
+
+This skips enhanced location and resource-provider validation, not `terraform validate` or Azure-side validation. Do not combine it with `ARM_PROVIDER_ENHANCED_VALIDATION_LOCATIONS` or `ARM_PROVIDER_ENHANCED_VALIDATION_RESOURCES`, including settings inherited from variable groups or task environments. For AzureRM 4.77+, prefer the location-only workaround described in [troubleshooting](#azurerm-metadata-rejects-the-saudi-location).
+
 From a generated platform checkout, local syntax validation can run these commands **individually**, stopping on failure:
 
 ```powershell
