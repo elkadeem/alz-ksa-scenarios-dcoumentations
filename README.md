@@ -33,7 +33,7 @@ The packages above are fixed, ready-to-run profiles. This repository is the **re
 | **8**: single-region hub and spoke VNet with NVA | [Runbook](devops/single-region-hub-and-spoke-vnet-with-nva/README.md) | [Runbook](github/single-region-hub-and-spoke-vnet-with-nva/README.md) |
 | **9**: single-region Virtual WAN with NVA | [Runbook](devops/single-region-virtual-wan-with-nva/README.md) | [Runbook](github/single-region-virtual-wan-with-nva/README.md) |
 
-The Azure DevOps runbook is the full reference for each scenario; the GitHub runbook covers what differs and links back to it.
+Each runbook is independent: choose one topology and delivery platform, then follow that README from prerequisites through operations. No other scenario README is required.
 
 ```text
 devops\<scenario>\    Azure DevOps: README, config (inputs, tfvars, lib, modules), tests

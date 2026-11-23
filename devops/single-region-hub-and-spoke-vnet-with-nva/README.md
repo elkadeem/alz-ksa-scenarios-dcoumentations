@@ -4,6 +4,8 @@ Deploy a **single-region hub and spoke virtual network prepared for a Network Vi
 
 This is a configuration and deployment runbook, not proof of a successful Azure deployment. **Finish every edit for one file before opening the next.** The file-by-file instructions below consolidate region, monitoring, Defender, DDoS, DNS, and Bastion changes; validation and deployment happen once afterward.
 
+This runbook is self-contained. You do not need to read or deploy another scenario first.
+
 ## 1. Select the configuration and understand the regional split
 
 Paths in this guide are relative to this scenario folder unless stated otherwise.

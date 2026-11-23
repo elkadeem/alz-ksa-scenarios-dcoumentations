@@ -2,7 +2,7 @@
 
 Deploy a **single-region hub and spoke virtual network prepared for a Network Virtual Appliance (NVA)** with the Azure Landing Zones accelerator, private bootstrap networking, and self-hosted GitHub Actions runners on Azure Container Instances (ACI).
 
-This is the GitHub counterpart of the [Azure DevOps runbook](../../devops/single-region-hub-and-spoke-vnet-with-nva/README.md). The platform design is identical; only the version-control system, tokens, bootstrap inputs, pipeline mechanics, and the provider-validation workaround differ.
+This runbook is self-contained: it includes the platform configuration, policy rationale, GitHub prerequisites, and deployment procedures. No other scenario needs to be read or deployed first.
 
 This is a configuration and deployment runbook, not proof of a successful Azure deployment. It was **cross-checked against** [moselim200/saudi-alz-github-hub-spoke-nva](https://github.com/moselim200/saudi-alz-github-hub-spoke-nva), whose owner reports a verified GitHub deployment (section 10). No deployment was run from this repository.
 
@@ -28,9 +28,9 @@ Paths are relative to this scenario folder unless stated otherwise.
 
 The scenario does **not** deploy an NVA, vendor licenses, production spokes, an ExpressRoute circuit, or an on-premises VPN device.
 
-### What is shared with the DevOps scenario
+### Configuration files
 
-These files are byte-identical copies of the DevOps scenario because they do not depend on the version-control system:
+Use the files in this scenario folder:
 
 | Path | Content |
 | --- | --- |
@@ -38,15 +38,13 @@ These files are byte-identical copies of the DevOps scenario because they do not
 | [config/lib/](config/lib/) | Custom ALZ library and policy-removal lists |
 | [config/modules/](config/modules/) and [config/main.connectivity.hub.and.spoke.virtual.network.tf](config/main.connectivity.hub.and.spoke.virtual.network.tf) | 48-file hub-and-spoke `v0.17.2` / private DNS `v0.23.2` overlay with the Saudi DNS fix |
 
-The rationale for every setting in those files is in the DevOps README, sections 4 to 6. Do not restate or fork it here: when it changes, update both scenarios (see the drift check in section 6).
-
-Only [config/inputs.yaml](config/inputs.yaml) and this README are GitHub-specific.
+The configuration rationale and required checks are included below. Only [config/inputs.yaml](config/inputs.yaml) and the delivery procedures depend on GitHub.
 
 ## 2. Prepare permissions, tools, and GitHub
 
 ### Azure prerequisites
 
-Identical to the DevOps scenario: four platform subscriptions (Management, Connectivity, Identity, Security) in one Microsoft Entra tenant, an existing parent management group (or the Tenant Root Group), and an account with `Owner` on that management group and every platform subscription, including the bootstrap subscription (activate PIM roles first). Inherited allowed-location policies must permit UAE North and Saudi Arabia East, or have approved scope-specific exemptions.
+Prepare four platform subscriptions (Management, Connectivity, Identity, Security) in one Microsoft Entra tenant, an existing parent management group (or the Tenant Root Group), and an account with `Owner` on that management group and every platform subscription, including bootstrap. Record tenant/subscription IDs and activate PIM roles first. Inherited allowed-location policies must permit UAE North and Saudi Arabia East, or have approved scope-specific exemptions.
 
 ### GitHub prerequisites
 
@@ -137,7 +135,7 @@ Private networking is not air-gapped: the bootstrap includes NAT Gateway/public-
 
 ## 4. Review `config/platform-landing-zone.tfvars` and the library
 
-These files are already complete and identical to the DevOps scenario. Edit them only for deliberate changes, using the DevOps README sections 4 and 5 for the reasoning. The settings to keep consistent:
+Open [platform-landing-zone.tfvars](config/platform-landing-zone.tfvars) and review all settings before saving. The tracked profile is already configured; make only deliberate changes, merge into existing blocks without duplicate top-level maps, and preserve `$${...}` replacement tokens.
 
 | Area | Required state |
 | --- | --- |
@@ -152,6 +150,90 @@ These files are already complete and identical to the DevOps scenario. Edit them
 | MCAPS public-IP tags (`FirstPartyUsage`) | Opt-in only when applied policies require them |
 
 Never edit `.terraform`, and preserve `$${...}` replacement tokens.
+
+### Resource flags, addressing, and DNS
+
+Keep `management_groups_enabled = true` and `management_group_settings.architecture_name = "alz_custom"`. Disabling `management_resources_enabled` removes the entire management bundle (resource group, workspace, AMA identity, DCRs, and solutions), not bootstrap storage.
+
+Under `custom_replacements.names`, keep VPN, Bastion, private zones, and private DNS auto-registration enabled; ExpressRoute and Private DNS Resolver disabled. Keep `hub_virtual_networks.primary.enabled_resources.firewall = false`; this is an NVA foundation, not Azure Firewall.
+
+| Address replacement | Default |
+| --- | --- |
+| Regional routing space | `10.0.0.0/16` |
+| Hub VNet | `10.0.0.0/22` |
+| NVA subnet / next hop | `10.0.0.0/26` / `10.0.0.4` |
+| Bastion subnet | `10.0.0.64/26` |
+| Gateway subnet | `10.0.0.128/27` |
+| Retained resolver subnet, resolver disabled | `10.0.0.160/28` |
+
+Approve overlap checks against bootstrap, on-premises, and future spokes; update related `primary_*` replacements together. Keep the NVA subnet's `route_table.assign_generated_route_table = false`: otherwise the generated user-subnet default/summary routes point the appliance's own traffic back to itself.
+
+Keep `hub_virtual_networks.primary.bastion.zones = []` and `bastion.bastion_public_ip.zones = []`. Saudi Bastion zonal creation failed with `BastionRegionAzNotSupported`; both lists must be empty to avoid inherited defaults. This is not zone-redundant Bastion and does not change gateway zones/SKUs.
+
+Keep private zones, intended VNet links, and auto-registration (`saudiarabiaeast.azure.local`) enabled. Disabling Resolver does not disable zones or bootstrap DNS, but supplies no replacement forwarder. Approve an NVA/on-premises DNS path separately. Consider a customer-owned suffix instead of `.local`, which can conflict with multicast DNS.
+
+**MCAPS only:** if applied policies require `FirstPartyUsage = "/Unprivileged"`, uncomment `ip_tags` inside **both** `virtual_network_gateways.vpn.ip_configurations.active_active_1.public_ip` and `active_active_2.public_ip`, and `bastion.bastion_public_ip`, all under `hub_virtual_networks.primary`. Place the tag in each public-IP object, not ordinary resource tags; retain empty Bastion zones. Verify all three IPs in the plan. Do not apply this tag indiscriminately.
+
+### Policy defaults and Defender guardrails
+
+Policy identity creation in Saudi Arabia East failed in a manual test and an independent deployment. Keep `management_group_settings.location = "uaenorth"` as an approved identity-only exception; changing it may replace assignments, identities, and role assignments. Keep Saudi resource locations unchanged.
+
+Inside `management_group_settings.policy_default_values`:
+
+| Entries | Required state and reason |
+| --- | --- |
+| `ama_change_tracking_data_collection_rule_id`, `ama_mdfc_sql_data_collection_rule_id`, `ama_vm_insights_data_collection_rule_id`, `ama_user_assigned_managed_identity_id`, `ama_user_assigned_managed_identity_name`, `log_analytics_workspace_id` | Commented out because the dependent resources and assignments are disabled. |
+| `ddos_protection_plan_id` | Commented out for source-disabled DDoS. |
+| `resource_group_name_mdfc`, `email_security_contact` | Commented out because automatic Defender configuration is excluded. |
+| `resource_group_location`, `resource_group_name_service_health_alerts` | Active for the independent service-health policy; location stays on the Saudi replacement. |
+| `private_dns_zone_subscription_id` | `"$${subscription_id_connectivity}"`. |
+| `private_dns_zone_region` | `"$${starter_location_01}"` (full region, not `sae`). |
+| `private_dns_zone_resource_group_name` | `"$${dns_resource_group_name}"`. |
+
+In the existing `policy_assignments_to_modify` map, keep `corp.policy_assignments.Deploy-Private-DNS-Zones.parameters.dnzZoneRegionShortNames = { saudiarabiaeast = "sae" }`. The initiative must construct the same Backup zone ID as Terraform: `privatelink.sae.backup.windowsazure.com`. This replaces the entire default region map; extend it before adding another DNS region. If the Corp management-group ID changes, update the modification key. Do not remove the Corp DNS assignment.
+
+Keep the entire `alz.policy_assignments.Deploy-MDFC-Config-H224` modification commented out because its assignment is excluded. Under **both** `platform.policy_assignments` and `landingzones.policy_assignments`, retain:
+
+| Assignment | Parameter | Value |
+| --- | --- | --- |
+| `Enforce-GR-MySQL0` | `mySqlAdvThreatProtection` | `"Disabled"` |
+| `Enforce-GR-PostgreSQL0` | `postgreSqlAdvThreatProtection` | `"Disabled"` |
+| `Enforce-GR-Storage0` | `storageThreatProtection` | `"Disabled"` |
+| `Enforce-GR-Synapse0` | `synapseDefender` | `"Disabled"` |
+| `Enforce-GR-SQL0` | `sqlManagedDefender` | `"Disabled"` |
+
+For `Enforce-GR-SQL0` in **both scopes**, also keep the `policyEffect` override with lowercase `value = "disabled"` and selector `kind = "policyDefinitionReferenceId"`, `in = ["Dine-Sql-Adv-Data"]`. That initiative member independently enables Advanced Data Security without an exposed effect parameter. Parameters use `"Disabled"`; overrides use `"disabled"`. Preserve other enforcement settings.
+
+### Custom library and coordinated re-enablement
+
+In [config/lib/archetype_definitions/](config/lib/archetype_definitions/), preserve other fields and keep these complete `policy_assignments_to_remove` lists active. Commenting out a removal **re-enables** an inherited assignment.
+
+| Override file | Complete removal list | Reason |
+| --- | --- | --- |
+| [root_custom](config/lib/archetype_definitions/root_custom.alz_archetype_override.yaml) | `Deploy-AzActivity-Log`, `Deploy-Diag-LogsCat`, `Deploy-MDFC-Config-H224`, `Deploy-MDFC-OssDb`, `Deploy-MDFC-SqlAtp`, `Deploy-MDEndpoints`, `Deploy-MDEndpointsAMA` | Remove workspace log forwarding and automatic Defender/endpoint configuration. |
+| [platform_custom](config/lib/archetype_definitions/platform_custom.alz_archetype_override.yaml) | `DenyAction-DeleteUAMIAMA`, `Deploy-MDFC-DefSQL-AMA`, `Deploy-VM-ChangeTrack`, `Deploy-VM-Monitoring`, `Deploy-vmArc-ChangeTrack`, `Deploy-vmHybr-Monitoring`, `Deploy-VMSS-ChangeTrack`, `Deploy-VMSS-Monitoring` | Remove disabled AMA identity protection and dependent deployments. |
+| [landing_zones_custom](config/lib/archetype_definitions/landing_zones_custom.alz_archetype_override.yaml) | `Deploy-AzSqlDb-Auditing`, `Deploy-MDFC-DefSQL-AMA`, `Deploy-SQL-Threat`, `Deploy-VM-ChangeTrack`, `Deploy-VM-Monitoring`, `Deploy-vmArc-ChangeTrack`, `Deploy-vmHybr-Monitoring`, `Deploy-VMSS-ChangeTrack`, `Deploy-VMSS-Monitoring`, `Enable-DDoS-VNET` | Remove workspace auditing, monitoring, SQL threat protection, and attachment to a disabled DDoS plan. |
+| [connectivity_custom](config/lib/archetype_definitions/connectivity_custom.alz_archetype_override.yaml) | `Enable-DDoS-VNET` | Do not attach connectivity VNets to a disabled plan. |
+
+Preserve [corp_custom](config/lib/archetype_definitions/corp_custom.alz_archetype_override.yaml) with `base_archetype: corp` and no removal of `Deploy-Private-DNS-Zones`, the [custom architecture](config/lib/architecture_definitions/alz_custom.alz_architecture_definition.yaml), [metadata](config/lib/alz_library_metadata.json), and remaining archetypes. A three-subscription test can retain an empty Security management group; remove its whole placement block, not the architecture.
+
+For an approved enabled-DDoS variant, set `custom_replacements.names.ddos_protection_plan_enabled = true`, activate the policy default `ddos_protection_plan_id = "$${ddos_protection_plan_id}"`, remove only `Enable-DDoS-VNET` from the landing-zones removal list, and set the connectivity removal list to `[]`. Keep all monitoring/Defender removals and verify Saudi DDoS availability first.
+
+To re-enable monitoring, restore the management bundle, its policy defaults, and dependent library assignments together. Before Defender re-enablement, review the complete retained source block and replace `defender_email_security_contact`. If Log Analytics stays off, retain `parameters.logAnalytics = ""` and the disabled override selecting `["ascExport", "defenderforKubernetes"]`; an empty workspace is not an alternative logging destination.
+
+### Existing-deployment implications
+
+- Management removal can delete a workspace, DCRs, identity, and resource group. Review retention/export, shared resources, deletion protection, and dependencies. Policy removal does not clean up agents, diagnostics, DCR associations, SQL auditing, or export automations.
+- Removing Defender policies does not set existing plans to `Free`, remove integrations, or stop billing. Inventory existing protection, inherited policy, and automation separately.
+- Removing a DDoS plan removes enhanced Network Protection, not baseline infrastructure protection; review VNet associations. IP Protection is not enabled automatically.
+- Resolver deletion can break forwarding; Bastion/public-IP or gateway changes can replace resources and interrupt access. Review the exact plan.
+- This reduced profile lacks centralized Log Analytics, VM Insights, AMA change tracking, SQL audit destination, and automatic Defender enablement. Obtain security/monitoring/compliance approval and alternatives. Remaining audit policies can still report noncompliance.
+
+### Network module overlay
+
+The [root networking overlay](config/main.connectivity.hub.and.spoke.virtual.network.tf) selects `source = "./modules/hub-and-spoke-vnet"` without `version`. The [hub module](config/modules/hub-and-spoke-vnet/main.tf) selects `source = "../private-link-private-dns-zones"` without `version`. The [DNS lookup](config/modules/private-link-private-dns-zones/locals.tf) returns `"sae"` only for normalized `saudiarabiaeast`, preserving upstream lookups for other regions: the upstream Saudi `geo_code` is null, which makes `replace` fail.
+
+Keep all 48 source files, licenses, moved blocks, outputs, variables, and nested modules from hub-and-spoke `v0.17.2` and private DNS `v0.23.2`. The starter short name, Corp policy map, and module patch fix three separate lookups; all are required. Pass `lib`, `modules`, and the networking file to bootstrap (section 7); adjacent folders are not copied automatically. Preserve the starter's `modules\config-templating`.
 
 ## 5. Provider-validation workaround for GitHub Actions
 
@@ -222,22 +304,6 @@ if ($LASTEXITCODE -ne 0) {
 
 Formatting parses Terraform files, not YAML, ALZ semantics, backend access, or Azure availability. This overlay is **not** a complete Terraform root; do not run `terraform validate` or plan here.
 
-Confirm the shared files still match the DevOps scenario, unless a difference is deliberate:
-
-```powershell
-$gh = "$targetFolderPath\config"
-$ado = "D:\workarea\Source\alz\terraform\devops\single-region-hub-and-spoke-vnet-with-nva\config"
-$names = "platform-landing-zone.tfvars", "main.connectivity.hub.and.spoke.virtual.network.tf"
-foreach ($name in $names) {
-    "{0}: {1}" -f $name, ((Get-FileHash "$gh\$name").Hash -eq (Get-FileHash "$ado\$name").Hash)
-}
-foreach ($folder in "lib", "modules") {
-    $a = Get-ChildItem "$gh\$folder" -Recurse -File | Get-FileHash | ForEach-Object { "$($_.Path.Substring($gh.Length))=$($_.Hash)" }
-    $b = Get-ChildItem "$ado\$folder" -Recurse -File | Get-FileHash | ForEach-Object { "$($_.Path.Substring($ado.Length))=$($_.Hash)" }
-    "{0}: {1}" -f $folder, -not (Compare-Object $a $b)
-}
-```
-
 ### Authentication and design gates
 
 ```powershell
@@ -249,7 +315,19 @@ az account list-locations `
     --output table
 ```
 
-Repeat service/SKU/quota checks in the relevant subscriptions; region visibility alone is insufficient. For enabled DDoS, check `ddosProtectionPlans` availability in Saudi Arabia East as in the DevOps README, section 7.
+Repeat service/SKU/quota checks in the relevant subscriptions; region visibility alone is insufficient. For enabled DDoS, check the connectivity subscription explicitly:
+
+```powershell
+az provider show `
+    --subscription "<connectivity-subscription-id>" `
+    --namespace Microsoft.Network `
+    --query "resourceTypes[?resourceType=='ddosProtectionPlans'].{Type:resourceType,Locations:locations}" `
+    --output json
+az network ddos-protection list `
+    --subscription "<connectivity-subscription-id>" `
+    --query "[?location=='saudiarabiaeast'].{Name:name,Location:location,ResourceGroup:resourceGroup}" `
+    --output table
+```
 
 Before bootstrap, confirm:
 
@@ -260,6 +338,7 @@ Before bootstrap, confirm:
 - [ ] Regional split, cross-border state/runners, policy exceptions, SKUs, capacity, and address ranges are approved.
 - [ ] Provider-validation workaround delivery (Option A or B) is chosen.
 - [ ] Bastion zones are `[]`; VPN and Bastion deployment are approved.
+- [ ] DDoS flag, plan-ID default, and both removal lists agree; any required MCAPS tags are on all three public IPs.
 - [ ] Monitoring, Defender, and resolver removals include dependent policy updates and approved alternatives.
 - [ ] Corp DNS map, full DNS region, starter short name, library, and all overlay paths are present.
 - [ ] No state, credentials, generated caches, or tenant-specific files are staged.
@@ -302,7 +381,15 @@ Keep the lock file and avoid `-upgrade`. CI/CD must initialize the real backend 
 
 ### Platform apply acceptance checks
 
-Use the DevOps README section 8 list, which applies unchanged: no null `replace` or SQL casing errors; Backup zone `privatelink.sae.backup.windowsazure.com`; auto-registration `saudiarabiaeast.azure.local`; platform resources in Saudi Arabia East, bootstrap in UAE North, policy identities per design; no management workspace/DCRs/AMA identity; no Private DNS Resolver or ExpressRoute gateway; VPN and Bastion enabled without Bastion zones; DDoS matching the chosen variant; no unexpected deletions, replacements, or permission changes. Only an authorized approver approves the plan.
+- No null `replace` or SQL casing errors.
+- Backup zone is `privatelink.sae.backup.windowsazure.com` and the Corp policy constructs the same ID; auto-registration is `saudiarabiaeast.azure.local`, with intended VNet links and bootstrap DNS intact.
+- Platform resources are in Saudi Arabia East, bootstrap in UAE North, and policy identities in the approved identity region. Global resources have no regional location.
+- No management workspace, DCRs, or AMA identity; removed monitoring/Defender assignments are absent, and both guardrail scopes retain disabled Defender settings.
+- No Private DNS Resolver/endpoints or ExpressRoute gateway; VPN and Bastion remain enabled, with both Bastion zone lists empty.
+- DDoS resource/assignments match the chosen variant; MCAPS tags are on all three public IPs when required.
+- No unexpected deletions, replacements, resource-address changes, subscription moves, or permission changes.
+
+Only an authorized approver approves the acceptable plan. Bootstrap success or local validation does not replace these checks.
 
 ### Existing generated repository: fallback delivery
 
@@ -346,7 +433,16 @@ These steps do not publish anything to the generated GitHub repositories; ongoin
 
 | Symptom | Action |
 | --- | --- |
-| Null `replace`, Bastion zone, SQL casing, DNS map errors | Same causes and fixes as the DevOps README troubleshooting table. |
+| Null `replace` still fails | Check the exact workflow checkout's two local module sources and Saudi DNS lookup; reinitialize. Never patch `.terraform`. |
+| `Module not installed` / source changed | Run `terraform init`; remove `version` only from calls switched to local sources. |
+| `BastionRegionAzNotSupported` | Set both host and public-IP zones to `[]`; inspect provisioning/state before recovery, not blind deletion/import. |
+| SQL override rejects `"Disabled"` | Overrides use lowercase `"disabled"`; initiative parameters use `"Disabled"`. |
+| DNS policy cannot index region map | Keep full `saudiarabiaeast` in defaults, its `sae` map entry, and the actual Corp management-group key. |
+| DNS zones/links unexpectedly replaced | Preserve block names and instance keys; investigate rather than approve. |
+| ACR fails in Saudi / ACI zone error | Keep bootstrap in a supported region. If approved, set `agent_container_zone_support: false`; assess registry zone redundancy separately. |
+| Invalid Security placement | Supply its subscription ID or comment out the entire placement block for a three-subscription test. |
+| Region/SKU denied or unavailable | Check subscription access, policy, capacity, and zones with the workflow identity; approve design changes rather than silently relocating resources. |
+| NVA next hop unreachable | Deploy/license the appliance, align its IP with the next hop, and test routing and DNS. |
 | `saudiarabiaeast` rejected as an invalid location | Check the three template jobs have `ARM_PROVIDER_ENHANCED_VALIDATION_LOCATIONS: "false"` and not the legacy variable; verify access with the same OIDC identity. |
 | Runners offline / jobs queued | Check runner token expiry and scope, ACI logs, image pull, DNS/egress, and runner group/repository assignment. For an expired token, use the accelerator's recovery steps. |
 | Backend access denied/timed out | Check the plan/apply managed-identity roles, private endpoint approval, routing, and DNS; do not enable public access. |
@@ -424,4 +520,3 @@ Recheck all of these before deployment:
 - [Hub-and-spoke source v0.17.2](https://github.com/Azure/terraform-azurerm-avm-ptn-alz-connectivity-hub-and-spoke-vnet/tree/v0.17.2)
 - [Private DNS source v0.23.2](https://github.com/Azure/terraform-azurerm-avm-ptn-network-private-link-private-dns-zones/tree/v0.23.2)
 - [Colleague's GitHub package](https://github.com/moselim200/saudi-alz-github-hub-spoke-nva)
-- The [Azure DevOps runbook](../../devops/single-region-hub-and-spoke-vnet-with-nva/README.md) for the full policy, DNS, Bastion, and addressing rationale.
